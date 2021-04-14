@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from win32com import client
 from openpyxl.styles import Alignment
+from tkinter import ttk
 import ctypes
 
 
@@ -13,8 +14,6 @@ root.title("Generador de Cotizaciones")
 p1 = tk.PhotoImage(file = "./altiuslogo.png")
 root.iconphoto(False, p1)
 
-
-
 termsLabels = []
 entries = []
 entriesCliente = []
@@ -22,6 +21,7 @@ entriesProductos = []
 checkBoxes = []
 entriesTerms = []
 dropDowns = []
+dropDownsProducts = []
 offset = 160
 entryWidth = 40
 canvasWidth = 1250
@@ -37,6 +37,10 @@ canvas1.config(yscrollcommand=vbar.set)
 totDict = {}
 currencies = []
 
+productValues ={
+    }
+
+allProducts = []
 
 
 def firstScreen():
@@ -144,19 +148,40 @@ def createThirdScreenLabels():
     monedaLabel.config(font=("helvetica", 11))
     canvas1.create_window(x, y, window=monedaLabel)
 
+def changePrice(i, chosenValue):
+    value = ""
+    if(chosenValue.upper() in productValues):
+        value = productValues[chosenValue.upper()]
+    x = entriesProductos[i][1]
+    x.delete(0, 'end')
+    x.insert(tk.END, value)
+
 def newProductEntry(y):
 
+    currentPosition = len(entriesProductos)
     if(len(entriesProductos) < 16):
         productoEntry = []
         x = 500
 
-        entryDescription = tk.Entry(root, width=40)
-        productoEntry.append(entryDescription)
-        canvas1.create_window(x + 80, y + 25, window=entryDescription)
+        chosenProduct = tk.StringVar(root)
+        chosenProduct.set(allProducts[0])
+        setPrice = productValues[chosenProduct.get()]
+        chosenProduct.trace('w', lambda var_name, var_index, operation: changePrice(currentPosition, chosenProduct.get()))
+        dropdownProduct = ttk.Combobox(root, width=30,textvariable=chosenProduct)
+        dropdownProduct["values"] = allProducts
+        dropDownsProducts.append(dropdownProduct)
+        productoEntry.append(chosenProduct)
+        canvas1.create_window(x+60, y + 25, window=dropdownProduct)
+
+        #entryDescription = tk.Entry(root, width=40)
+        #productoEntry.append(entryDescription)
+        #canvas1.create_window(x + 80, y + 25, window=entryDescription)
         x += 250
 
         entryPrice = tk.Entry(root, width=10)
         productoEntry.append(entryPrice)
+
+        entryPrice.insert(tk.END, productValues[chosenProduct.get()])
         canvas1.create_window(x, y + 25, window=entryPrice)
         x += 100
 
@@ -182,22 +207,27 @@ def newProductEntry(y):
         #canvas1.create_window(x, y + 25, window=entryMoneda)
 
         entriesProductos.append(productoEntry)
+        print(entriesProductos)
 
 def removeEntry():
     currentEntries = len(entriesProductos)
-    i = 0
-    for x in entriesProductos[currentEntries-1]:
-        if(i!=3 and i!= 4):
-            x.destroy()
-        elif(i == 3):
-            checkBoxes[currentEntries - 1].destroy()
-            checkBoxes.pop(currentEntries-1)
-        elif(i == 4):
-            dropDowns[currentEntries - 1].destroy()
-            dropDowns.pop(currentEntries-1)
-        i+=1
+    if(currentEntries > 1):
+        i = 0
+        for x in entriesProductos[currentEntries-1]:
+            if(i!=3 and i!= 4 and i!=0):
+                x.destroy()
+            elif(i == 3):
+                checkBoxes[currentEntries - 1].destroy()
+                checkBoxes.pop(currentEntries-1)
+            elif(i == 4):
+                dropDowns[currentEntries - 1].destroy()
+                dropDowns.pop(currentEntries-1)
+            elif(i == 0):
+                dropDownsProducts[currentEntries - 1].destroy()
+                dropDownsProducts.pop(currentEntries - 1)
+            i+=1
 
-    entriesProductos.pop(currentEntries-1)
+        entriesProductos.pop(currentEntries-1)
 
 def fourthScreen():
 
@@ -282,7 +312,9 @@ def convertToPdf(filename):
 def addToExcel():
 
     wb = openpyxl.load_workbook('plantilla.xlsx')
+    wb2 = openpyxl.load_workbook('plantilla.xlsx')
     sheet = wb["Quote 1"]
+    costosSheet = wb2["Costo"]
 
     #Add Datos Generales
 
@@ -316,6 +348,8 @@ def addToExcel():
     curColumn = 1
     curRow = 14
     for x in entriesProductos:
+        newProductValue = ''
+        newProductName = ''
         for y in x:
             cell = sheet.cell(row=curRow, column=curColumn)
             valor = y.get()
@@ -327,16 +361,29 @@ def addToExcel():
             if(valor != ""):
                 if(curColumn == 3):
                     cell.alignment = Alignment(horizontal="right")
+                    newProductValue = valor
                     valor = formatNumber(str(round(float(valor),2)))
                 if(curColumn == 6):
                     totDict[valor] = 0
                     totDict[valor+"IGV"] = 0
                     if(valor not in currencies and valor != ""):
                         currencies.append(valor)
+                if(curColumn == 1):
+                    valor = valor.upper()
+                    if(valor not in productValues):
+                        newProductName = valor
                 cell.value = valor
             curColumn += 1
             if(curColumn == 2):
                 curColumn += 1
+
+        if(newProductName != '' and newProductValue != ''):
+            nameCell = costosSheet.cell(row=len(allProducts)+1, column=1)
+            nameCell.value = newProductName
+            valueCell = costosSheet.cell(row=len(allProducts)+1, column=2)
+            valueCell.value = newProductValue
+            productValues[newProductName] = newProductValue
+            allProducts.append(newProductName)
         curColumn = 1
         curRow += 1
 
@@ -402,12 +449,39 @@ def addToExcel():
 
 
     wb.save(filename+".xlsx")
+    wb2.save("./plantilla.xlsx")
 
     filename = "\quote"+entries[1].get()
 
 
     convertToPdf(filename)
 
+def readProductValues():
+    wb = openpyxl.load_workbook('plantilla.xlsx')
+    costosSheet = wb["Costo"]
+
+    curRow = 1
+    cell = costosSheet.cell(1,1)
+    while(cell.value != '' and cell.value != None):
+        print(cell.value)
+        valor = ""
+        key = ""
+        for curColumn in range(1,3):
+            cell = costosSheet.cell(row=curRow, column=curColumn)
+            if(curColumn == 1):
+                key = cell.value
+            else:
+                valor = cell.value
+        productValues[key] = valor
+        curRow+=1
+        cell = costosSheet.cell(row=curRow, column=curColumn)
+
+
+
+readProductValues()
+
+for x in productValues:
+    allProducts.append(x)
 
 
 firstScreen()
